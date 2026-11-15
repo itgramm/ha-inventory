@@ -95,7 +95,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: InventoryConfigEntry) ->
         digest = await hass.async_add_executor_job(_frontend_digest)
         await panel_custom.async_register_panel(
             hass,
-            webcomponent_name=PANEL_WEBCOMPONENT,
+            # Unique per build: a tab still holding an older panel cannot clash
+            # with the new element name (customElements.define cannot redefine).
+            webcomponent_name=f"{PANEL_WEBCOMPONENT}-{digest}",
             frontend_url_path=PANEL_URL_PATH,
             module_url=f"{STATIC_URL_BASE}/{PANEL_JS}?v={integration.version}-{digest}",
             sidebar_title=PANEL_TITLE,

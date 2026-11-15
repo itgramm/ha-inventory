@@ -961,4 +961,7 @@ class HaInventoryPanel extends HTMLElement {
   }
 }
 
-customElements.define("ha-inventory-panel", HaInventoryPanel);
+// The backend registers the panel as ha-inventory-panel-<hash> and loads this
+// file as ...js?v=<version>-<hash>, so every build gets its own element name.
+const BUILD_HASH = (new URL(import.meta.url).searchParams.get("v") || "").split("-").pop();
+customElements.define(BUILD_HASH ? `ha-inventory-panel-${BUILD_HASH}` : "ha-inventory-panel", HaInventoryPanel);
