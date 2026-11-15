@@ -214,6 +214,7 @@ def build_inventory(
                     device_id=device.id,
                     manufacturer=device.manufacturer,
                     model=device.model,
+                    model_id=getattr(device, "model_id", None),
                     protocol=protocol,
                     zigbee=zigbee,
                     zwave=zwave,

@@ -106,6 +106,7 @@ def build_links(
     manufacturer: str | None,
     model: str | None,
     protocol: str,
+    model_id: str | None = None,
     zigbee: ZigbeeInfo | None = None,
     zwave: ZWaveInfo | None = None,
     firmware: str | None = None,
@@ -119,16 +120,25 @@ def build_links(
     has_direct_db_link = False
 
     if protocol == PROTOCOL_ZIGBEE and zigbee is not None:
+        exact = False  # True when the model came from the "Description (MODEL)" form
         if zigbee.source == "z2m":
             if zigbee.is_bridge:
                 links.append({"kind": "z2m", "url": "https://www.zigbee2mqtt.io/"})
-                has_direct_db_link = True
-            elif z2m_model := parse_z2m_model(model):
-                slug = quote(z2m_model.replace("/", "_"), safe="")
-                links.append({"kind": "z2m", "url": Z2M_DEVICES_URL.format(slug=slug)})
-                has_direct_db_link = True
-        if not has_direct_db_link and (manufacturer or model):
-            query = f"site:zigbee2mqtt.io {manufacturer or ''} {model or ''}".strip()
+                has_direct_db_link = exact = True
+            else:
+                z2m_model = parse_z2m_model(model)
+                exact = z2m_model is not None
+                # Newer Zigbee2MQTT publishes the description as `model` and the
+                # model code as `model_id`; the code is usually the docs page name.
+                if not z2m_model and model_id and model_id.strip():
+                    z2m_model = model_id.strip()
+                if z2m_model:
+                    slug = quote(z2m_model.replace("/", "_"), safe="")
+                    links.append({"kind": "z2m", "url": Z2M_DEVICES_URL.format(slug=slug)})
+                    has_direct_db_link = True
+        # A guessed page may not exist, so keep a search as a safety net.
+        if not exact and (manufacturer or model or model_id):
+            query = f"site:zigbee2mqtt.io {manufacturer or ''} {model_id or model or ''}".strip()
             links.append({"kind": "z2m_search", "url": _search_link(query)})
 
     if protocol == PROTOCOL_ZWAVE and zwave is not None:

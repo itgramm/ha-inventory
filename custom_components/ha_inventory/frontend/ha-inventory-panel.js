@@ -379,6 +379,14 @@ class HaInventoryPanel extends HTMLElement {
     return new Date(iso).toLocaleDateString(this._locale, { year: "numeric", month: "short", day: "numeric" });
   }
 
+  /** "Description (CODE)": newer Zigbee2MQTT puts the code in model_id, not model. */
+  _modelLabel(d) {
+    const model = d.model || "";
+    const id = d.model_id || "";
+    if (model && id && !model.toLowerCase().includes(id.toLowerCase())) return `${model} (${id})`;
+    return model || id;
+  }
+
   _protocolName(p) {
     return this._t.protocols[p] || p;
   }
@@ -420,7 +428,7 @@ class HaInventoryPanel extends HTMLElement {
     const { key, dir } = this._sort;
     const val = (d) => {
       switch (key) {
-        case "manufacturer": return `${d.manufacturer || ""} ${d.model || ""}`.toLowerCase();
+        case "manufacturer": return `${d.manufacturer || ""} ${this._modelLabel(d)}`.toLowerCase();
         case "protocol": return d.protocol;
         case "integration": return d.integrations.join(",");
         case "added": return d.added ? Date.parse(d.added) : null;
@@ -520,10 +528,10 @@ class HaInventoryPanel extends HTMLElement {
     const types = new Map();
     for (const d of this._data ? this._data.devices : []) {
       const maker = d.manufacturer || "";
-      const model = d.model || "";
+      const model = this._modelLabel(d);
       const type = types.get(d.type) || types.set(d.type, { type: d.type, models: new Map(), count: 0 }).get(d.type);
       const key = `${maker}|${model}`.toLowerCase();
-      const entry = type.models.get(key) || type.models.set(key, { key: `${d.type}|${key}`, maker, model, devices: [] }).get(key);
+      const entry = type.models.get(key) || type.models.set(key, { key: `${d.type}|${key}`, maker, model, search: d.model_id || d.model || maker, devices: [] }).get(key);
       entry.devices.push(d);
       type.count += 1;
     }
@@ -561,7 +569,7 @@ class HaInventoryPanel extends HTMLElement {
         const open = this._openModels.has(m.key);
         const devs = open
           ? `<div class="modeldevs">${m.devices.map((d) => this._reportDeviceHtml(d)).join("")}
-               <div style="padding-top:8px"><button data-show="${esc(m.model || m.maker)}">${esc(t.show_in_table)}</button></div></div>`
+               <div style="padding-top:8px"><button data-show="${esc(m.search)}">${esc(t.show_in_table)}</button></div></div>`
           : "";
         return `<div class="model">
           <div class="modelrow" data-model="${esc(m.key)}">
@@ -812,7 +820,7 @@ class HaInventoryPanel extends HTMLElement {
     const main = `
       <tr class="row" data-id="${esc(d.id)}">
         <td>${esc(d.name)}<div class="sub">${esc(d.area || t.noArea)}</div></td>
-        <td>${esc(d.manufacturer || "–")}<div class="sub">${esc(d.model || "")}</div></td>
+        <td>${esc(d.manufacturer || "–")}<div class="sub">${esc(this._modelLabel(d))}</div></td>
         <td><span class="chip proto">${esc(this._protocolName(d.protocol))}</span></td>
         <td>${esc(d.integrations.join(", "))}</td>
         <td>${added}</td>

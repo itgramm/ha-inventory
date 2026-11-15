@@ -92,3 +92,14 @@ def test_zwave_link_and_unknown_manufacturer_search():
     )
     assert "search" in kinds(unknown)
     assert "device_ui" not in kinds(unknown)  # non-http URL dropped
+
+
+def test_z2m_new_style_uses_model_id_with_search_backup():
+    zigbee = zigbee_info({("mqtt", "zigbee2mqtt_0xa4c1")}, set())
+    links = build_links(
+        device_id="d", manufacturer="SONOFF", model="Temperature and humidity sensor",
+        model_id="SNZB-02B", protocol="zigbee", zigbee=zigbee,
+    )
+    by_kind = {link["kind"]: link["url"] for link in links}
+    assert by_kind["z2m"] == "https://www.zigbee2mqtt.io/devices/SNZB-02B.html"
+    assert "z2m_search" in by_kind  # guessed page, keep a fallback
