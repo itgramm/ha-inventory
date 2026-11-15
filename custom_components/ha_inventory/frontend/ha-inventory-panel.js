@@ -53,10 +53,29 @@ const STRINGS = {
     tab_report: "Report",
     report_title: "Devices by type and model",
     report_summary: "devices · models · types",
-    report_hint: "Click a model to see its devices. The copied or downloaded report contains only manufacturers, models and counts, so it is safe to share.",
-    copy_report: "Copy report",
+    report_hint: "Click a model to see its devices. The shared report contains only manufacturers, models, counts and public links (no names, areas or IDs).",
+    share: "Share…",
+    share_title: "Share report",
+    share_doc_title: "My Home Assistant devices",
+    share_credit: "Made with HA Inventory",
+    share_hints: {
+      telegram: "Pastes with bold text in Telegram and Signal.",
+      whatsapp: "Pastes with bold text in WhatsApp.",
+      markdown: "Markdown for GitHub, Notion, Obsidian, forums.",
+      rich: "Copies formatted text with clickable links (Google Docs, Notes, email, Word).",
+    },
+    fmt_telegram: "Telegram / Signal",
+    fmt_whatsapp: "WhatsApp",
+    fmt_markdown: "Markdown",
+    fmt_rich: "Rich text (Docs, Notes, email)",
+    include_links: "Include links",
+    copy: "Copy",
     copied: "Copied!",
-    download_report: "Download .md",
+    copy_failed: "Select and copy manually",
+    download_md: "Download .md",
+    close: "Close",
+    report_unique: "unique models",
+    types_word: "types",
     show_in_table: "Show in Devices tab",
     unknownModel: "Unknown model",
     unknownMaker: "Unknown manufacturer",
@@ -83,6 +102,12 @@ const STRINGS = {
       search: "Web search",
     },
   },
+};
+
+const TYPE_ICON = {
+  light: "💡", switch: "🔌", sensor: "🌡️", climate: "♨️", cover: "🪟", lock: "🔒", camera: "📷",
+  media_player: "🔊", vacuum: "🧹", fan: "🌀", humidifier: "💧", water_heater: "🚿", alarm: "🚨",
+  siren: "📢", valve: "🚰", lawn_mower: "🌱", remote: "🎛️", tracker: "📍", hub: "🛰️", service: "☁️", other: "📦",
 };
 
 const TIER_EMOJI = ["🍼", "🌱", "🏠", "🛡️", "🦖"];
@@ -144,6 +169,24 @@ a.link:hover { text-decoration:underline; }
 .modeldevs { padding:4px 16px 12px 32px; background:var(--secondary-background-color); font-size:13px; }
 .modeldevs .dev { display:flex; flex-wrap:wrap; gap:4px 16px; padding:6px 0; border-bottom:1px dashed var(--divider-color); }
 .modeldevs .dev:last-child { border-bottom:none; }
+button.primary { background:var(--primary-color); color:var(--text-primary-color,#fff); border-color:transparent; }
+.typegrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,460px),1fr)); gap:12px; align-items:start; }
+.typegrid .typeblock { margin-bottom:0; }
+.ticon { font-size:20px; }
+.share-bar { height:3px; background:var(--divider-color); }
+.share-bar div { height:100%; background:var(--primary-color); }
+.chev { color:var(--secondary-text-color); width:12px; }
+.mlinks { display:flex; flex-wrap:wrap; justify-content:flex-end; }
+dialog { background:var(--card-background-color); color:var(--primary-text-color); border:1px solid var(--divider-color); border-radius:14px; padding:16px; width:min(720px,94vw); }
+dialog::backdrop { background:rgba(0,0,0,.55); }
+.dlghead, .dlgfoot, .dlgopts { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.dlghead { justify-content:space-between; margin-bottom:12px; font-size:17px; }
+.dlgopts { margin-bottom:10px; }
+.dlgfoot { margin-top:12px; justify-content:flex-end; }
+.dlgfoot .sub { flex:1; min-width:180px; }
+#shareText { width:100%; height:min(50vh,420px); resize:vertical; font:13px/1.45 ui-monospace,Menlo,Consolas,monospace; background:var(--primary-background-color); color:var(--primary-text-color); border:1px solid var(--divider-color); border-radius:8px; padding:10px; }
+#shareRich { max-height:min(50vh,420px); overflow:auto; background:#fff; color:#111; border-radius:8px; padding:4px 16px; }
+#shareRich a { color:#0b57d0; }
 .reportbar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:12px; }
 .reportbar .sub { flex:1; min-width:200px; }
 .msg { padding:40px; text-align:center; color:var(--secondary-text-color); }
@@ -230,7 +273,26 @@ class HaInventoryPanel extends HTMLElement {
         </div>
         <div id="reportView" hidden></div>
         <div class="footer">${esc(t.privacy)}</div>
-      </div>`;
+      </div>
+      <dialog id="share">
+        <div class="dlghead"><b>${esc(t.share_title)}</b><button id="shareClose">${esc(t.close)}</button></div>
+        <div class="dlgopts">
+          <select id="shareFmt">
+            <option value="telegram">${esc(t.fmt_telegram)}</option>
+            <option value="whatsapp">${esc(t.fmt_whatsapp)}</option>
+            <option value="markdown">${esc(t.fmt_markdown)}</option>
+            <option value="rich">${esc(t.fmt_rich)}</option>
+          </select>
+          <label><input type="checkbox" id="shareLinks" checked> ${esc(t.include_links)}</label>
+        </div>
+        <textarea id="shareText" readonly spellcheck="false"></textarea>
+        <div id="shareRich" hidden></div>
+        <div class="dlgfoot">
+          <span class="sub" id="shareHint"></span>
+          <button id="shareDl">${esc(t.download_md)}</button>
+          <button id="shareCopy" class="primary">${esc(t.copy)}</button>
+        </div>
+      </dialog>`;
     const root = this.shadowRoot;
     const menu = document.createElement("ha-menu-button");
     menu.hass = this._hass;
@@ -252,6 +314,14 @@ class HaInventoryPanel extends HTMLElement {
       const target = e.target.closest("[data-status]");
       if (target) this._applyStatusFilter(target.dataset.status);
     });
+    const dlg = root.getElementById("share");
+    root.getElementById("shareClose").addEventListener("click", () => dlg.close());
+    dlg.addEventListener("click", (e) => { if (e.target === dlg) dlg.close(); });
+    root.getElementById("shareFmt").addEventListener("change", () => this._renderShare());
+    root.getElementById("shareLinks").addEventListener("change", () => this._renderShare());
+    root.getElementById("shareCopy").addEventListener("click", (e) => this._shareCopy(e.target));
+    root.getElementById("shareDl").addEventListener("click", () =>
+      this._download(this._shareContent("markdown", root.getElementById("shareLinks").checked).text, "text/markdown;charset=utf-8", `ha-inventory-report-${new Date().toISOString().slice(0, 10)}.md`));
     this._built = true;
     this._setView("devices");
   }
@@ -426,6 +496,14 @@ class HaInventoryPanel extends HTMLElement {
 
   /* ---------- report: type -> model -> devices ---------- */
 
+  /** Links worth showing for a model (device specific ones like "Open in HA" are skipped). */
+  _modelLinks(devices) {
+    const order = ["z2m", "zwave_db", "z2m_search", "manufacturer", "search"];
+    const found = {};
+    for (const d of devices) for (const l of d.links) if (order.includes(l.kind) && !found[l.kind]) found[l.kind] = l;
+    return order.filter((k) => found[k]).map((k) => found[k]);
+  }
+
   _reportGroups() {
     const t = this._t;
     const types = new Map();
@@ -441,10 +519,20 @@ class HaInventoryPanel extends HTMLElement {
     const list = [...types.values()].map((g) => ({
       ...g,
       label: t.types[g.type] || g.type,
-      models: [...g.models.values()].sort((a, b) => b.devices.length - a.devices.length || `${a.maker} ${a.model}`.localeCompare(`${b.maker} ${b.model}`)),
+      icon: TYPE_ICON[g.type] || "📦",
+      models: [...g.models.values()]
+        .map((m) => ({ ...m, name: [m.maker, m.model].filter(Boolean).join(" ") || t.unknownModel, links: this._modelLinks(m.devices) }))
+        .sort((x, y) => y.devices.length - x.devices.length || x.name.localeCompare(y.name)),
     }));
     // "Other" always last, the rest by number of devices.
-    return list.sort((a, b) => (a.type === "other") - (b.type === "other") || b.count - a.count);
+    return list.sort((x, y) => (x.type === "other") - (y.type === "other") || y.count - x.count);
+  }
+
+  _linkChips(links) {
+    const t = this._t;
+    return links
+      .map((l) => `<a class="link" href="${esc(l.url)}" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">${esc(t.links[l.kind] || l.kind)}</a>`)
+      .join("");
   }
 
   _renderReport() {
@@ -453,7 +541,10 @@ class HaInventoryPanel extends HTMLElement {
     if (this._error) { host.innerHTML = `<div class="msg">${esc(t.error)}: ${esc(this._error)}</div>`; return; }
     if (!this._data) { host.innerHTML = `<div class="msg">${esc(t.loading)}</div>`; return; }
     const groups = this._reportGroups();
+    const total = this._data.devices.length;
     const modelCount = groups.reduce((n, g) => n + g.models.length, 0);
+    const mix = this._data.summary.by_protocol.map((p) => `<span class="chip proto">${esc(this._protocolName(p.key))}: ${p.count}</span>`).join("");
+
     const blocks = groups.map((g) => {
       const rows = g.models.map((m) => {
         const open = this._openModels.has(m.key);
@@ -463,23 +554,33 @@ class HaInventoryPanel extends HTMLElement {
           : "";
         return `<div class="model">
           <div class="modelrow" data-model="${esc(m.key)}">
+            <span class="chev">${open ? "▾" : "▸"}</span>
             <div class="mname"><div>${esc(m.model || t.unknownModel)}</div><div class="sub">${esc(m.maker || t.unknownMaker)}</div></div>
+            <span class="mlinks">${this._linkChips(m.links)}</span>
             <span class="count">×${m.devices.length}</span>
           </div>${devs}</div>`;
       }).join("");
+      const pct = Math.max(2, Math.round((g.count / total) * 100));
       return `<div class="typeblock">
-        <div class="typehead"><h2>${esc(g.label)}</h2><span class="sub">${g.count} ${esc(t.devices)} · ${g.models.length} ${esc(t.models)}</span></div>${rows}</div>`;
+        <div class="typehead"><span class="ticon">${g.icon}</span><h2>${esc(g.label)}</h2><span class="sub">${g.count} ${esc(t.devices)} · ${g.models.length} ${esc(t.models)}</span></div>
+        <div class="share-bar"><div style="width:${pct}%"></div></div>${rows}</div>`;
     }).join("");
 
     host.innerHTML = `
       <div class="reportbar">
-        <div class="sub"><b>${esc(t.report_title)}</b><br>${this._data.devices.length} ${esc(t.devices)} · ${modelCount} ${esc(t.models)} · ${groups.length} types<br>${esc(t.report_hint)}</div>
-        <button id="copyReport">${esc(t.copy_report)}</button>
-        <button id="dlReport">${esc(t.download_report)}</button>
-      </div>${blocks}`;
+        <div class="sub"><b>${esc(t.report_title)}</b><br>${esc(t.report_hint)}</div>
+        <button id="shareReport" class="primary">${esc(t.share)}</button>
+      </div>
+      <div class="cards">
+        <div class="card"><div class="k">${esc(t.total)}</div><div class="v">${total}</div><div class="mix">${mix}</div></div>
+        <div class="card"><div class="k">${esc(t.models)}</div><div class="v">${modelCount}</div><div class="s">${esc(t.report_unique)}</div></div>
+        <div class="card"><div class="k">${esc(t.types_word)}</div><div class="v">${groups.length}</div><div class="s">${esc(groups.slice(0, 3).map((g) => g.icon + " " + g.label).join(" · "))}</div></div>
+      </div>
+      <div class="typegrid">${blocks}</div>`;
 
     host.querySelectorAll(".modelrow").forEach((el) =>
-      el.addEventListener("click", () => {
+      el.addEventListener("click", (e) => {
+        if (e.target.closest("a")) return;
         const key = el.dataset.model;
         this._openModels.has(key) ? this._openModels.delete(key) : this._openModels.add(key);
         this._renderReport();
@@ -494,8 +595,7 @@ class HaInventoryPanel extends HTMLElement {
         this._renderTable();
       })
     );
-    host.querySelector("#copyReport").addEventListener("click", (e) => this._copyReport(e.target));
-    host.querySelector("#dlReport").addEventListener("click", () => this._download(this._reportMarkdown(), "text/markdown;charset=utf-8", `ha-inventory-report-${new Date().toISOString().slice(0, 10)}.md`));
+    host.querySelector("#shareReport").addEventListener("click", () => this._openShare());
   }
 
   _reportDeviceHtml(d) {
@@ -514,33 +614,116 @@ class HaInventoryPanel extends HTMLElement {
     return `<div class="dev"><span>${bits}</span><span>${links}</span></div>`;
   }
 
-  /** Shareable text: manufacturers, models and counts only. No names, areas or ids. */
-  _reportMarkdown() {
+  /* ---------- sharing: preview dialog, several text formats ---------- */
+
+  _openShare() {
+    const root = this.shadowRoot;
+    this._renderShare();
+    root.getElementById("share").showModal();
+  }
+
+  /** Links safe to share: only direct, public ones (no search URLs, no local device pages). */
+  _shareLink(m) {
+    const l = m.links.find((x) => ["z2m", "zwave_db", "manufacturer"].includes(x.kind));
+    return l ? l.url : null;
+  }
+
+  _shareContent(fmt, withLinks) {
     const t = this._t;
     const groups = this._reportGroups();
-    const lines = [`# My Home Assistant devices`, "", `${this._data.devices.length} ${t.devices}, ${groups.reduce((n, g) => n + g.models.length, 0)} ${t.models}`, ""];
+    const total = this._data.devices.length;
+    const models = groups.reduce((n, g) => n + g.models.length, 0);
+    const summary = `${total} ${t.devices} · ${models} ${t.models} · ${groups.length} ${t.types_word}`;
+    const title = t.share_doc_title;
+    const credit = `${t.share_credit} https://github.com/itgramm/ha-inventory`;
+    const countOf = (m) => (m.devices.length > 1 ? ` ×${m.devices.length}` : "");
+
+    if (fmt === "rich") {
+      let html = `<h2>${esc(title)}</h2><p>${esc(summary)}</p>`;
+      for (const g of groups) {
+        html += `<h3>${g.icon} ${esc(g.label)} (${g.count})</h3><ul>`;
+        for (const m of g.models) {
+          const url = withLinks ? this._shareLink(m) : null;
+          html += `<li>${esc(m.name)}${esc(countOf(m))}${url ? ` — <a href="${esc(url)}">${esc(url.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, ""))}</a>` : ""}</li>`;
+        }
+        html += "</ul>";
+      }
+      html += `<p><i>${esc(credit)}</i></p>`;
+      return { html, text: this._shareContent("markdown", withLinks).text };
+    }
+
+    const style = {
+      telegram: { b: (x) => `**${x}**`, h1: (x) => `**${x}**`, h2: (x) => `**${x}**` },
+      whatsapp: { b: (x) => `*${x}*`, h1: (x) => `*${x}*`, h2: (x) => `*${x}*` },
+      markdown: { b: (x) => `**${x}**`, h1: (x) => `# ${x}`, h2: (x) => `## ${x}` },
+    }[fmt];
+    const lines = [style.h1(title), summary, ""];
     for (const g of groups) {
-      lines.push(`## ${g.label} (${g.count})`, "");
+      lines.push(style.h2(`${g.icon} ${g.label} (${g.count})`));
       for (const m of g.models) {
-        const name = [m.maker, m.model].filter(Boolean).join(" ") || t.unknownModel;
-        lines.push(`- ${name}${m.devices.length > 1 ? ` ×${m.devices.length}` : ""}`);
+        const url = withLinks ? this._shareLink(m) : null;
+        if (fmt === "markdown") {
+          const label = m.links.find((l) => l.url === url);
+          lines.push(`- ${m.name}${countOf(m)}${url ? ` — [${t.links[label.kind] || label.kind}](${url})` : ""}`);
+        } else {
+          lines.push(`• ${m.name}${countOf(m)}`);
+          if (url) lines.push(`   🔗 ${url}`);
+        }
       }
       lines.push("");
     }
-    return lines.join("\n");
+    lines.push(credit);
+    return { text: lines.join("\n") };
   }
 
-  async _copyReport(button) {
-    const text = this._reportMarkdown();
+  _renderShare() {
+    const root = this.shadowRoot;
+    const fmt = root.getElementById("shareFmt").value;
+    const withLinks = root.getElementById("shareLinks").checked;
+    const content = this._shareContent(fmt, withLinks);
+    const ta = root.getElementById("shareText");
+    const rich = root.getElementById("shareRich");
+    ta.value = content.text;
+    ta.hidden = fmt === "rich";
+    rich.hidden = fmt !== "rich";
+    if (fmt === "rich") rich.innerHTML = content.html;
+    root.getElementById("shareHint").textContent = this._t.share_hints[fmt];
+    this._shareCurrent = content;
+  }
+
+  async _shareCopy(button) {
+    const root = this.shadowRoot;
+    const fmt = root.getElementById("shareFmt").value;
+    const { text, html } = this._shareCurrent;
+    let ok = false;
     try {
-      await navigator.clipboard.writeText(text);
-      const old = button.textContent;
-      button.textContent = this._t.copied;
-      setTimeout(() => (button.textContent = old), 1500);
+      if (html && window.ClipboardItem) {
+        await navigator.clipboard.write([new ClipboardItem({
+          "text/html": new Blob([html], { type: "text/html" }),
+          "text/plain": new Blob([text], { type: "text/plain" }),
+        })]);
+      } else {
+        await navigator.clipboard.writeText(text);
+      }
+      ok = true;
     } catch (_) {
-      // Clipboard needs a secure context (https); fall back to a file download.
-      this._download(text, "text/markdown;charset=utf-8", "ha-inventory-report.md");
+      // Clipboard API needs https; fall back to selecting the preview and copying it.
+      const target = fmt === "rich" ? root.getElementById("shareRich") : root.getElementById("shareText");
+      if (fmt === "rich") {
+        const range = document.createRange();
+        range.selectNodeContents(target);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+      } else {
+        target.focus();
+        target.select();
+      }
+      try { ok = document.execCommand("copy"); } catch (_e) { ok = false; }
     }
+    const old = button.textContent;
+    button.textContent = ok ? this._t.copied : this._t.copy_failed;
+    setTimeout(() => (button.textContent = old), 1800);
   }
 
   _download(text, type, name) {
