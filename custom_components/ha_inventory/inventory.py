@@ -42,6 +42,51 @@ def resolve_added(
     return None, None
 
 
+# (entity domain, device type); the first match wins, so order is priority.
+_TYPE_PRIORITY: tuple[tuple[str, str], ...] = (
+    ("light", "light"),
+    ("climate", "climate"),
+    ("cover", "cover"),
+    ("lock", "lock"),
+    ("camera", "camera"),
+    ("media_player", "media_player"),
+    ("vacuum", "vacuum"),
+    ("fan", "fan"),
+    ("humidifier", "humidifier"),
+    ("water_heater", "water_heater"),
+    ("alarm_control_panel", "alarm"),
+    ("siren", "siren"),
+    ("valve", "valve"),
+    ("lawn_mower", "lawn_mower"),
+    ("remote", "remote"),
+    ("switch", "switch"),
+    ("event", "remote"),
+    ("binary_sensor", "sensor"),
+    ("sensor", "sensor"),
+    ("button", "remote"),
+    ("device_tracker", "tracker"),
+)
+
+
+def device_type(entities: Iterable[Any], has_children: bool, is_service: bool) -> str:
+    """Classify a device by what it mainly is (light, sensor, hub, ...).
+
+    Only primary entities count: diagnostic/config entities (battery, identify
+    buttons, firmware update, ...) would otherwise make everything a "sensor".
+    """
+    if has_children:
+        return "hub"
+    domains = {
+        e.entity_id.split(".", 1)[0]
+        for e in entities
+        if e.disabled_by is None and getattr(e, "entity_category", None) is None
+    }
+    for domain, type_ in _TYPE_PRIORITY:
+        if domain in domains:
+            return type_
+    return "service" if is_service else "other"
+
+
 def _numeric(state: str) -> float | None:
     try:
         return float(state)
@@ -105,6 +150,7 @@ def build_inventory(
     """Return ``{"devices": [...], "summary": {...}}`` ready for JSON."""
     devices = list(devices)
     names = {d.id: (d.name_by_user or d.name or d.id) for d in devices}
+    parents = {d.via_device_id for d in devices if d.via_device_id}
     rows: list[dict[str, Any]] = []
 
     for device in devices:
@@ -149,6 +195,11 @@ def build_inventory(
                 "via": names.get(device.via_device_id) if device.via_device_id else None,
                 "integrations": domains,
                 "protocol": protocol,
+                "type": device_type(
+                    entities_by_device.get(device.id, []),
+                    device.id in parents,
+                    is_service,
+                ),
                 "ieee": zigbee.ieee if zigbee else None,
                 "added": added.isoformat() if added else None,
                 "added_source": added_source,

@@ -48,6 +48,27 @@ const STRINGS = {
     detail_entities: "Entities",
     detail_model_id: "Model ID",
     y: "y", mo: "mo", d: "d",
+    attentionFilter: "Needs attention",
+    tab_devices: "Devices",
+    tab_report: "Report",
+    report_title: "Devices by type and model",
+    report_summary: "devices · models · types",
+    report_hint: "Click a model to see its devices. The copied or downloaded report contains only manufacturers, models and counts, so it is safe to share.",
+    copy_report: "Copy report",
+    copied: "Copied!",
+    download_report: "Download .md",
+    show_in_table: "Show in Devices tab",
+    unknownModel: "Unknown model",
+    unknownMaker: "Unknown manufacturer",
+    models: "models",
+    types: {
+      light: "Lights", switch: "Switches & plugs", sensor: "Sensors", climate: "Climate",
+      cover: "Covers & blinds", lock: "Locks", camera: "Cameras", media_player: "Media players",
+      vacuum: "Vacuums", fan: "Fans", humidifier: "Humidifiers", water_heater: "Water heaters",
+      alarm: "Alarm panels", siren: "Sirens", valve: "Valves", lawn_mower: "Lawn mowers",
+      remote: "Remotes & buttons", tracker: "Trackers", hub: "Hubs & bridges",
+      service: "Services", other: "Other",
+    },
     privacy: "All data is processed and stored locally. Links open only when you click them.",
     tiers: ["Newborn", "Young", "Settled", "Veteran", "Ancient"],
     protocols: { zigbee: "Zigbee", zwave: "Z-Wave", matter: "Matter", bluetooth: "Bluetooth", network: "Network / cloud", service: "Service", other: "Other" },
@@ -104,6 +125,27 @@ a.link { display:inline-block; margin:0 6px 2px 0; color:var(--primary-color); t
 a.link:hover { text-decoration:underline; }
 .detailgrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:6px 16px; }
 .footer { margin:16px 0 8px; color:var(--secondary-text-color); font-size:12px; text-align:center; }
+.tabs { display:flex; gap:4px; }
+.tabs button.active { background:rgba(255,255,255,.22); }
+.card.click { cursor:pointer; transition:border-color .15s; }
+.card.click:hover { border-color:var(--primary-color); }
+.card.click .s span.cnt { text-decoration:underline dotted; }
+.card.click .s span.cnt:hover { color:var(--primary-color); }
+.typeblock { background:var(--card-background-color); border:1px solid var(--divider-color); border-radius:12px; margin-bottom:12px; overflow:hidden; }
+.typehead { display:flex; align-items:baseline; gap:10px; padding:12px 16px; border-bottom:1px solid var(--divider-color); }
+.typehead h2 { margin:0; font-size:17px; font-weight:500; flex:1; }
+.model { border-bottom:1px solid var(--divider-color); }
+.model:last-child { border-bottom:none; }
+.modelrow { display:flex; align-items:center; gap:12px; padding:10px 16px; cursor:pointer; }
+.modelrow:hover { background:var(--secondary-background-color); }
+.modelrow .mname { flex:1; min-width:0; }
+.modelrow .mname div { overflow:hidden; text-overflow:ellipsis; }
+.count { font-weight:500; background:var(--secondary-background-color); border:1px solid var(--divider-color); border-radius:999px; padding:1px 10px; font-size:13px; }
+.modeldevs { padding:4px 16px 12px 32px; background:var(--secondary-background-color); font-size:13px; }
+.modeldevs .dev { display:flex; flex-wrap:wrap; gap:4px 16px; padding:6px 0; border-bottom:1px dashed var(--divider-color); }
+.modeldevs .dev:last-child { border-bottom:none; }
+.reportbar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:12px; }
+.reportbar .sub { flex:1; min-width:200px; }
 .msg { padding:40px; text-align:center; color:var(--secondary-text-color); }
 `;
 
@@ -117,6 +159,8 @@ class HaInventoryPanel extends HTMLElement {
     this._filters = { protocol: "", integration: "", manufacturer: "", area: "", status: "" };
     this._sort = { key: "name", dir: 1 };
     this._open = new Set();
+    this._openModels = new Set();
+    this._view = "devices";
     this._built = false;
   }
 
@@ -167,17 +211,24 @@ class HaInventoryPanel extends HTMLElement {
       <div class="bar">
         <span id="menu"></span>
         <h1>${esc(t.title)}</h1>
+        <span class="tabs">
+          <button id="tab_devices">${esc(t.tab_devices)}</button>
+          <button id="tab_report">${esc(t.tab_report)}</button>
+        </span>
         <button id="refresh">${esc(t.refresh)}</button>
       </div>
       <div class="wrap">
-        <div id="cards" class="cards"></div>
-        <div class="toolbar">
-          <input id="q" type="search" placeholder="${esc(t.search)}" />
-          <span id="filters"></span>
-          <button id="csv">${esc(t.export_csv)}</button>
-          <button id="json">${esc(t.export_json)}</button>
+        <div id="devicesView">
+          <div id="cards" class="cards"></div>
+          <div class="toolbar">
+            <input id="q" type="search" placeholder="${esc(t.search)}" />
+            <span id="filters"></span>
+            <button id="csv">${esc(t.export_csv)}</button>
+            <button id="json">${esc(t.export_json)}</button>
+          </div>
+          <div id="table"></div>
         </div>
-        <div id="table"></div>
+        <div id="reportView" hidden></div>
         <div class="footer">${esc(t.privacy)}</div>
       </div>`;
     const root = this.shadowRoot;
@@ -194,7 +245,34 @@ class HaInventoryPanel extends HTMLElement {
     root.getElementById("refresh").addEventListener("click", () => this._load());
     root.getElementById("csv").addEventListener("click", () => this._export("csv"));
     root.getElementById("json").addEventListener("click", () => this._export("json"));
+    root.getElementById("tab_devices").addEventListener("click", () => this._setView("devices"));
+    root.getElementById("tab_report").addEventListener("click", () => this._setView("report"));
+    // One delegated handler for the clickable "needs attention" card.
+    root.getElementById("cards").addEventListener("click", (e) => {
+      const target = e.target.closest("[data-status]");
+      if (target) this._applyStatusFilter(target.dataset.status);
+    });
     this._built = true;
+    this._setView("devices");
+  }
+
+  _setView(view) {
+    this._view = view;
+    const root = this.shadowRoot;
+    root.getElementById("devicesView").hidden = view !== "devices";
+    root.getElementById("reportView").hidden = view !== "report";
+    root.getElementById("tab_devices").classList.toggle("active", view === "devices");
+    root.getElementById("tab_report").classList.toggle("active", view === "report");
+    if (view === "report") this._renderReport();
+  }
+
+  _applyStatusFilter(status) {
+    this._filters = { protocol: "", integration: "", manufacturer: "", area: "", status };
+    this._query = "";
+    this.shadowRoot.getElementById("q").value = "";
+    this._renderFilters();
+    this._renderTable();
+    this.shadowRoot.getElementById("table").scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   /* ---------- helpers ---------- */
@@ -231,6 +309,7 @@ class HaInventoryPanel extends HTMLElement {
 
   _matchesStatus(d, status) {
     switch (status) {
+      case "attention": return d.offline || this._isLowBattery(d) || !!d.update;
       case "offline": return d.offline;
       case "low_battery": return this._isLowBattery(d);
       case "update": return !!d.update;
@@ -294,6 +373,7 @@ class HaInventoryPanel extends HTMLElement {
     const areas = [...new Set(this._data.devices.map((d) => d.area).filter(Boolean))].sort().map((x) => opt(x, x));
     areas.unshift(opt("__none__", t.noArea));
     const statuses = [
+      opt("attention", `${t.attentionFilter} (${this._data.devices.filter((d) => this._matchesStatus(d, "attention")).length})`),
       opt("offline", `${t.offline} (${s.offline})`),
       opt("low_battery", `${t.lowBattery} (${s.low_battery})`),
       opt("update", `${t.updates} (${s.updates})`),
@@ -326,20 +406,150 @@ class HaInventoryPanel extends HTMLElement {
     const s = this._data.summary;
     const device = (x) => (x ? `${esc(x.name)}` : "–");
     const age = (x) => (x ? this._formatAge(x.age_days) : "");
-    const attention = s.offline + s.low_battery + s.updates;
+    // Distinct devices (one device can be offline and low on battery at once).
+    const attention = this._data.devices.filter((d) => this._matchesStatus(d, "attention")).length;
     const mix = s.by_protocol.map((p) => `<span class="chip proto">${esc(this._protocolName(p.key))}: ${p.count}</span>`).join("");
     host.innerHTML = `
       <div class="card"><div class="k">${esc(t.total)}</div><div class="v">${s.total}</div><div class="mix">${mix}</div></div>
       <div class="card"><div class="k">${esc(t.oldest)}</div><div class="v">${esc(age(s.oldest) || "–")}</div><div class="s" title="${esc(s.oldest && s.oldest.name)}">${device(s.oldest)}</div></div>
       <div class="card"><div class="k">${esc(t.newest)}</div><div class="v">${esc(age(s.newest) || "–")}</div><div class="s" title="${esc(s.newest && s.newest.name)}">${device(s.newest)}</div></div>
       <div class="card"><div class="k">${esc(t.average)}</div><div class="v">${esc(s.average_age_days != null ? this._formatAge(s.average_age_days) : "–")}</div><div class="s">${esc(t.combined)}: ${esc(this._formatAge(s.total_age_days))}</div></div>
-      <div class="card"><div class="k">${esc(t.attention)}</div><div class="v">${attention}</div><div class="s">${esc(t.offline)} ${s.offline} · ${esc(t.lowBattery.toLowerCase())} ${s.low_battery} · ${esc(t.updates.toLowerCase())} ${s.updates}</div></div>`;
+      <div class="card click" data-status="attention" title="${esc(t.attentionFilter)}"><div class="k">${esc(t.attention)}</div><div class="v">${attention}</div><div class="s"><span class="cnt" data-status="offline">${esc(t.offline)} ${s.offline}</span> · <span class="cnt" data-status="low_battery">${esc(t.lowBattery.toLowerCase())} ${s.low_battery}</span> · <span class="cnt" data-status="update">${esc(t.updates.toLowerCase())} ${s.updates}</span></div></div>`;
   }
 
   _renderBody() {
     if (!this._built) return;
     this._renderCards();
     this._renderTable();
+    if (this._view === "report") this._renderReport();
+  }
+
+  /* ---------- report: type -> model -> devices ---------- */
+
+  _reportGroups() {
+    const t = this._t;
+    const types = new Map();
+    for (const d of this._data ? this._data.devices : []) {
+      const maker = d.manufacturer || "";
+      const model = d.model || "";
+      const type = types.get(d.type) || types.set(d.type, { type: d.type, models: new Map(), count: 0 }).get(d.type);
+      const key = `${maker}|${model}`.toLowerCase();
+      const entry = type.models.get(key) || type.models.set(key, { key: `${d.type}|${key}`, maker, model, devices: [] }).get(key);
+      entry.devices.push(d);
+      type.count += 1;
+    }
+    const list = [...types.values()].map((g) => ({
+      ...g,
+      label: t.types[g.type] || g.type,
+      models: [...g.models.values()].sort((a, b) => b.devices.length - a.devices.length || `${a.maker} ${a.model}`.localeCompare(`${b.maker} ${b.model}`)),
+    }));
+    // "Other" always last, the rest by number of devices.
+    return list.sort((a, b) => (a.type === "other") - (b.type === "other") || b.count - a.count);
+  }
+
+  _renderReport() {
+    const t = this._t;
+    const host = this.shadowRoot.getElementById("reportView");
+    if (this._error) { host.innerHTML = `<div class="msg">${esc(t.error)}: ${esc(this._error)}</div>`; return; }
+    if (!this._data) { host.innerHTML = `<div class="msg">${esc(t.loading)}</div>`; return; }
+    const groups = this._reportGroups();
+    const modelCount = groups.reduce((n, g) => n + g.models.length, 0);
+    const blocks = groups.map((g) => {
+      const rows = g.models.map((m) => {
+        const open = this._openModels.has(m.key);
+        const devs = open
+          ? `<div class="modeldevs">${m.devices.map((d) => this._reportDeviceHtml(d)).join("")}
+               <div style="padding-top:8px"><button data-show="${esc(m.model || m.maker)}">${esc(t.show_in_table)}</button></div></div>`
+          : "";
+        return `<div class="model">
+          <div class="modelrow" data-model="${esc(m.key)}">
+            <div class="mname"><div>${esc(m.model || t.unknownModel)}</div><div class="sub">${esc(m.maker || t.unknownMaker)}</div></div>
+            <span class="count">×${m.devices.length}</span>
+          </div>${devs}</div>`;
+      }).join("");
+      return `<div class="typeblock">
+        <div class="typehead"><h2>${esc(g.label)}</h2><span class="sub">${g.count} ${esc(t.devices)} · ${g.models.length} ${esc(t.models)}</span></div>${rows}</div>`;
+    }).join("");
+
+    host.innerHTML = `
+      <div class="reportbar">
+        <div class="sub"><b>${esc(t.report_title)}</b><br>${this._data.devices.length} ${esc(t.devices)} · ${modelCount} ${esc(t.models)} · ${groups.length} types<br>${esc(t.report_hint)}</div>
+        <button id="copyReport">${esc(t.copy_report)}</button>
+        <button id="dlReport">${esc(t.download_report)}</button>
+      </div>${blocks}`;
+
+    host.querySelectorAll(".modelrow").forEach((el) =>
+      el.addEventListener("click", () => {
+        const key = el.dataset.model;
+        this._openModels.has(key) ? this._openModels.delete(key) : this._openModels.add(key);
+        this._renderReport();
+      })
+    );
+    host.querySelectorAll("button[data-show]").forEach((el) =>
+      el.addEventListener("click", () => {
+        this._applyStatusFilter("");
+        this._query = el.dataset.show.toLowerCase();
+        this.shadowRoot.getElementById("q").value = el.dataset.show;
+        this._setView("devices");
+        this._renderTable();
+      })
+    );
+    host.querySelector("#copyReport").addEventListener("click", (e) => this._copyReport(e.target));
+    host.querySelector("#dlReport").addEventListener("click", () => this._download(this._reportMarkdown(), "text/markdown;charset=utf-8", `ha-inventory-report-${new Date().toISOString().slice(0, 10)}.md`));
+  }
+
+  _reportDeviceHtml(d) {
+    const t = this._t;
+    const bits = [
+      `<b>${esc(d.name)}</b>`,
+      d.area ? esc(d.area) : `<span class="sub">${esc(t.noArea)}</span>`,
+      d.added ? `${esc(this._formatDate(d.added))}${d.added_source === "first_seen" ? " ≈" : ""} · ${esc(this._formatAge(d.age_days))}` : "",
+      d.sw_version ? `${esc(t.col_fw)}: ${esc(d.sw_version)}` : "",
+    ].filter(Boolean).join(" · ");
+    const links = d.links.map((l) => {
+      const internal = l.url.startsWith("/");
+      const attrs = internal ? "" : ' target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer"';
+      return `<a class="link" href="${esc(l.url)}"${attrs}>${esc(t.links[l.kind] || l.kind)}</a>`;
+    }).join("");
+    return `<div class="dev"><span>${bits}</span><span>${links}</span></div>`;
+  }
+
+  /** Shareable text: manufacturers, models and counts only. No names, areas or ids. */
+  _reportMarkdown() {
+    const t = this._t;
+    const groups = this._reportGroups();
+    const lines = [`# My Home Assistant devices`, "", `${this._data.devices.length} ${t.devices}, ${groups.reduce((n, g) => n + g.models.length, 0)} ${t.models}`, ""];
+    for (const g of groups) {
+      lines.push(`## ${g.label} (${g.count})`, "");
+      for (const m of g.models) {
+        const name = [m.maker, m.model].filter(Boolean).join(" ") || t.unknownModel;
+        lines.push(`- ${name}${m.devices.length > 1 ? ` ×${m.devices.length}` : ""}`);
+      }
+      lines.push("");
+    }
+    return lines.join("\n");
+  }
+
+  async _copyReport(button) {
+    const text = this._reportMarkdown();
+    try {
+      await navigator.clipboard.writeText(text);
+      const old = button.textContent;
+      button.textContent = this._t.copied;
+      setTimeout(() => (button.textContent = old), 1500);
+    } catch (_) {
+      // Clipboard needs a secure context (https); fall back to a file download.
+      this._download(text, "text/markdown;charset=utf-8", "ha-inventory-report.md");
+    }
+  }
+
+  _download(text, type, name) {
+    const url = URL.createObjectURL(new Blob([text], { type }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
   _renderTable() {

@@ -91,6 +91,26 @@ def test_inventory_rows_and_summary():
     assert s["no_area"] == 2
 
 
+def test_device_types():
+    hub = device("h", "Bridge", NOW)
+    child = device("c", "Bulb", NOW, via_device_id="h")
+    sensor = device("s", "Temp", NOW)
+    plug = device("p", "Plug", NOW)
+    entities = [
+        entity("light.bulb", "c"),
+        entity("sensor.temp", "s"),
+        entity("sensor.temp_battery", "s", entity_category="diagnostic"),
+        entity("switch.plug", "p"),
+        entity("sensor.plug_power", "p"),
+        entity("update.plug_fw", "p", entity_category="config"),
+    ]
+    rows = {r["id"]: r for r in run([hub, child, sensor, plug], entities)["devices"]}
+    assert rows["h"]["type"] == "hub"
+    assert rows["c"]["type"] == "light"
+    assert rows["s"]["type"] == "sensor"
+    assert rows["p"]["type"] == "switch"
+
+
 def test_include_disabled_and_offline():
     dead = device("d4", "Dead", NOW - timedelta(days=5), disabled_by="user")
     sleeper = device("d5", "Sleeper", NOW - timedelta(days=5))
