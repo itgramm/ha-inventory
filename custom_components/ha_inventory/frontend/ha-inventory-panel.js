@@ -49,6 +49,8 @@ const STRINGS = {
     detail_model_id: "Model ID",
     y: "y", mo: "mo", d: "d",
     attentionFilter: "Needs attention",
+    show_all: "Show all devices",
+    filter_by: "Filter by this protocol",
     tab_devices: "Devices",
     tab_report: "Report",
     report_title: "Devices by type and model",
@@ -145,6 +147,8 @@ tr.detail td { background:var(--secondary-background-color); font-size:13px; }
 .chip { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; margin:0 4px 4px 0; background:var(--secondary-background-color); border:1px solid var(--divider-color); white-space:nowrap; }
 .chip.warn { color:var(--error-color, #db4437); border-color:currentColor; }
 .chip.info { color:var(--primary-color); border-color:currentColor; }
+.chip.click { cursor:pointer; }
+.chip.click:hover { filter:brightness(1.15); }
 .chip.proto { background:var(--primary-color); color:var(--text-primary-color, #fff); border-color:transparent; }
 a.link { display:inline-block; margin:0 6px 2px 0; color:var(--primary-color); text-decoration:none; font-size:13px; white-space:nowrap; }
 a.link:hover { text-decoration:underline; }
@@ -311,8 +315,11 @@ class HaInventoryPanel extends HTMLElement {
     root.getElementById("tab_report").addEventListener("click", () => this._setView("report"));
     // One delegated handler for the clickable "needs attention" card.
     root.getElementById("cards").addEventListener("click", (e) => {
-      const target = e.target.closest("[data-status]");
-      if (target) this._applyStatusFilter(target.dataset.status);
+      const target = e.target.closest("[data-protocol],[data-status],[data-reset]");
+      if (!target) return;
+      if (target.dataset.protocol) this._applyFilters({ protocol: target.dataset.protocol });
+      else if (target.dataset.status) this._applyFilters({ status: target.dataset.status });
+      else this._applyFilters({});
     });
     const dlg = root.getElementById("share");
     root.getElementById("shareClose").addEventListener("click", () => dlg.close());
@@ -337,7 +344,11 @@ class HaInventoryPanel extends HTMLElement {
   }
 
   _applyStatusFilter(status) {
-    this._filters = { protocol: "", integration: "", manufacturer: "", area: "", status };
+    this._applyFilters({ status });
+  }
+
+  _applyFilters(partial) {
+    this._filters = { protocol: "", integration: "", manufacturer: "", area: "", status: "", ...partial };
     this._query = "";
     this.shadowRoot.getElementById("q").value = "";
     this._renderFilters();
@@ -478,9 +489,9 @@ class HaInventoryPanel extends HTMLElement {
     const age = (x) => (x ? this._formatAge(x.age_days) : "");
     // Distinct devices (one device can be offline and low on battery at once).
     const attention = this._data.devices.filter((d) => this._matchesStatus(d, "attention")).length;
-    const mix = s.by_protocol.map((p) => `<span class="chip proto">${esc(this._protocolName(p.key))}: ${p.count}</span>`).join("");
+    const mix = s.by_protocol.map((p) => `<span class="chip proto click" data-protocol="${esc(p.key)}" title="${esc(this._t.filter_by)}">${esc(this._protocolName(p.key))}: ${p.count}</span>`).join("");
     host.innerHTML = `
-      <div class="card"><div class="k">${esc(t.total)}</div><div class="v">${s.total}</div><div class="mix">${mix}</div></div>
+      <div class="card click" data-reset="1" title="${esc(t.show_all)}"><div class="k">${esc(t.total)}</div><div class="v">${s.total}</div><div class="mix">${mix}</div></div>
       <div class="card"><div class="k">${esc(t.oldest)}</div><div class="v">${esc(age(s.oldest) || "–")}</div><div class="s" title="${esc(s.oldest && s.oldest.name)}">${device(s.oldest)}</div></div>
       <div class="card"><div class="k">${esc(t.newest)}</div><div class="v">${esc(age(s.newest) || "–")}</div><div class="s" title="${esc(s.newest && s.newest.name)}">${device(s.newest)}</div></div>
       <div class="card"><div class="k">${esc(t.average)}</div><div class="v">${esc(s.average_age_days != null ? this._formatAge(s.average_age_days) : "–")}</div><div class="s">${esc(t.combined)}: ${esc(this._formatAge(s.total_age_days))}</div></div>
@@ -543,7 +554,7 @@ class HaInventoryPanel extends HTMLElement {
     const groups = this._reportGroups();
     const total = this._data.devices.length;
     const modelCount = groups.reduce((n, g) => n + g.models.length, 0);
-    const mix = this._data.summary.by_protocol.map((p) => `<span class="chip proto">${esc(this._protocolName(p.key))}: ${p.count}</span>`).join("");
+    const mix = this._data.summary.by_protocol.map((p) => `<span class="chip proto click" data-protocol="${esc(p.key)}" title="${esc(this._t.filter_by)}">${esc(this._protocolName(p.key))}: ${p.count}</span>`).join("");
 
     const blocks = groups.map((g) => {
       const rows = g.models.map((m) => {
@@ -596,6 +607,12 @@ class HaInventoryPanel extends HTMLElement {
       })
     );
     host.querySelector("#shareReport").addEventListener("click", () => this._openShare());
+    host.querySelectorAll("[data-protocol]").forEach((el) =>
+      el.addEventListener("click", () => {
+        this._setView("devices");
+        this._applyFilters({ protocol: el.dataset.protocol });
+      })
+    );
   }
 
   _reportDeviceHtml(d) {
