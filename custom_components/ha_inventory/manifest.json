@@ -1,0 +1,14 @@
+{
+  "domain": "ha_inventory",
+  "name": "HA Inventory",
+  "codeowners": ["@itgramm"],
+  "config_flow": true,
+  "dependencies": ["http", "frontend", "panel_custom", "websocket_api"],
+  "documentation": "https://github.com/itgramm/ha-inventory",
+  "integration_type": "service",
+  "iot_class": "calculated",
+  "issue_tracker": "https://github.com/itgramm/ha-inventory/issues",
+  "requirements": [],
+  "single_config_entry": true,
+  "version": "0.1.0"
+}
