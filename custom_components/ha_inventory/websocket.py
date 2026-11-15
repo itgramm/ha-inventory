@@ -16,8 +16,10 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_INCLUDE_DISABLED,
+    CONF_INCLUDE_SERVICES,
     CONF_LOW_BATTERY,
     DEFAULT_INCLUDE_DISABLED,
+    DEFAULT_INCLUDE_SERVICES,
     DEFAULT_LOW_BATTERY,
     DOMAIN,
     WS_GET,
@@ -71,6 +73,7 @@ async def ws_get_inventory(
         first_seen=entry.runtime_data.store.first_seen,
         now=dt_util.utcnow(),
         include_disabled=entry.options.get(CONF_INCLUDE_DISABLED, DEFAULT_INCLUDE_DISABLED),
+        include_services=entry.options.get(CONF_INCLUDE_SERVICES, DEFAULT_INCLUDE_SERVICES),
         low_battery=entry.options.get(CONF_LOW_BATTERY, DEFAULT_LOW_BATTERY),
     )
     connection.send_result(msg["id"], result)

@@ -121,3 +121,11 @@ def test_include_disabled_and_offline():
     assert rows["d4"]["disabled"] is True
     assert rows["d5"]["offline"] is True
     assert result["summary"]["offline"] == 1
+
+
+def test_services_hidden_unless_requested():
+    svc = device("sv", "addon diagnostics", NOW, entry_type=NS(value="service"))
+    real = device("r", "Lamp", NOW)
+    assert [r["id"] for r in run([svc, real])["devices"]] == ["r"]
+    with_services = run([svc, real], include_services=True)["devices"]
+    assert {r["id"] for r in with_services} == {"sv", "r"}

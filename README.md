@@ -31,7 +31,7 @@ A **local-only** inventory of every device in your Home Assistant. The more devi
 3. Settings → Devices & services → **Add integration** → *HA Inventory*.
 4. Open **Inventory** in the sidebar (admins only).
 
-Options (gear icon on the integration): show in sidebar, include disabled devices, low battery threshold.
+Options (gear icon on the integration): show in sidebar, include disabled devices, include services, low battery threshold.
 
 ## Development
 

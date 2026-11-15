@@ -16,9 +16,11 @@ from homeassistant.core import callback
 
 from .const import (
     CONF_INCLUDE_DISABLED,
+    CONF_INCLUDE_SERVICES,
     CONF_LOW_BATTERY,
     CONF_SHOW_IN_SIDEBAR,
     DEFAULT_INCLUDE_DISABLED,
+    DEFAULT_INCLUDE_SERVICES,
     DEFAULT_LOW_BATTERY,
     DEFAULT_SHOW_IN_SIDEBAR,
     DOMAIN,
@@ -65,6 +67,10 @@ class HAInventoryOptionsFlow(OptionsFlow):
                 vol.Required(
                     CONF_INCLUDE_DISABLED,
                     default=options.get(CONF_INCLUDE_DISABLED, DEFAULT_INCLUDE_DISABLED),
+                ): bool,
+                vol.Required(
+                    CONF_INCLUDE_SERVICES,
+                    default=options.get(CONF_INCLUDE_SERVICES, DEFAULT_INCLUDE_SERVICES),
                 ): bool,
                 vol.Required(
                     CONF_LOW_BATTERY,

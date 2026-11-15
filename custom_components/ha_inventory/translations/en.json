@@ -17,6 +17,7 @@
         "data": {
           "show_in_sidebar": "Show in sidebar",
           "include_disabled": "Include disabled devices",
+          "include_services": "Include services (cloud integrations, add-on diagnostics)",
           "low_battery_threshold": "Low battery threshold (%)"
         }
       }

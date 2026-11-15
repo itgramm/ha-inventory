@@ -145,6 +145,7 @@ def build_inventory(
     first_seen: Mapping[str, str],
     now: datetime,
     include_disabled: bool = False,
+    include_services: bool = False,
     low_battery: int = 20,
 ) -> dict[str, Any]:
     """Return ``{"devices": [...], "summary": {...}}`` ready for JSON."""
@@ -157,6 +158,10 @@ def build_inventory(
         disabled = device.disabled_by is not None
         if disabled and not include_disabled:
             continue
+        is_service = getattr(device.entry_type, "value", device.entry_type) == "service"
+        # Services (cloud integrations, add-on diagnostics, ...) are not physical devices.
+        if is_service and not include_services:
+            continue
 
         device_entries = [
             entries[eid] for eid in device.config_entries if eid in entries
@@ -164,7 +169,6 @@ def build_inventory(
         domains = sorted({e.domain for e in device_entries})
         identifiers = [tuple(i) for i in device.identifiers]
         connections = [tuple(c) for c in device.connections]
-        is_service = getattr(device.entry_type, "value", device.entry_type) == "service"
 
         protocol = detect_protocol(
             domains=domains,
