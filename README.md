@@ -2,6 +2,20 @@
 
 A **local-only** inventory of every device in your Home Assistant. The more devices you add, the harder it is to remember what you have, where it came from and how old it is. HA Inventory adds an **Inventory** panel to the sidebar that answers those questions.
 
+## Screenshots
+
+**Every device in one table.** Filter by protocol, integration, manufacturer, area or status. Click the cards to filter, click a row for details.
+
+![Devices](https://raw.githubusercontent.com/itgramm/ha-inventory/main/docs/images/devices.png)
+
+**Report by type and model.** Each model appears once with a count and links, and a click shows its devices.
+
+![Report](https://raw.githubusercontent.com/itgramm/ha-inventory/main/docs/images/report.png)
+
+**Share it.** Preview the report and copy it for Telegram, Signal, WhatsApp, Markdown or rich text.
+
+![Share](https://raw.githubusercontent.com/itgramm/ha-inventory/main/docs/images/share.png)
+
 ## Privacy
 
 - No network calls, no telemetry, no cloud, no external fonts or scripts.
@@ -32,15 +46,6 @@ A **local-only** inventory of every device in your Home Assistant. The more devi
 4. Open **Inventory** in the sidebar (admins only).
 
 Options (gear icon on the integration): show in sidebar, include disabled devices, include services, low battery threshold.
-
-## Development
-
-```bash
-pip install pytest
-pytest
-```
-
-The data logic (`classify.py`, `links.py`, `inventory.py`) has no Home Assistant imports and is covered by plain unit tests.
 
 ## License
 
