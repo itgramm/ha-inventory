@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -32,6 +33,14 @@ from .websocket import async_register_websocket
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
+FRONTEND_DIR = Path(__file__).parent / "frontend"
+
+
+def _frontend_digest() -> str:
+    """Short content hash of the panel JS, used to bust browser caches."""
+    return hashlib.sha256((FRONTEND_DIR / PANEL_JS).read_bytes()).hexdigest()[:10]
+
+
 type InventoryConfigEntry = ConfigEntry[InventoryRuntime]
 
 
@@ -48,7 +57,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         [
             StaticPathConfig(
                 STATIC_URL_BASE,
-                str(Path(__file__).parent / "frontend"),
+                str(FRONTEND_DIR),
                 cache_headers=False,
             )
         ]
@@ -83,11 +92,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: InventoryConfigEntry) ->
 
     if entry.options.get(CONF_SHOW_IN_SIDEBAR, DEFAULT_SHOW_IN_SIDEBAR):
         integration = await async_get_integration(hass, DOMAIN)
+        digest = await hass.async_add_executor_job(_frontend_digest)
         await panel_custom.async_register_panel(
             hass,
             webcomponent_name=PANEL_WEBCOMPONENT,
             frontend_url_path=PANEL_URL_PATH,
-            module_url=f"{STATIC_URL_BASE}/{PANEL_JS}?v={integration.version}",
+            module_url=f"{STATIC_URL_BASE}/{PANEL_JS}?v={integration.version}-{digest}",
             sidebar_title=PANEL_TITLE,
             sidebar_icon=PANEL_ICON,
             require_admin=True,
