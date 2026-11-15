@@ -1,0 +1,26 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "HA Inventory",
+        "description": "Adds an Inventory panel to the sidebar that lists every device in Home Assistant with its model, age, firmware and useful links.\n\nEverything is computed and stored locally. Nothing is ever sent anywhere."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "HA Inventory is already set up."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "HA Inventory options",
+        "data": {
+          "show_in_sidebar": "Show in sidebar",
+          "include_disabled": "Include disabled devices",
+          "include_services": "Include services (cloud integrations, add-on diagnostics)",
+          "low_battery_threshold": "Low battery threshold (%)"
+        }
+      }
+    }
+  }
+}
