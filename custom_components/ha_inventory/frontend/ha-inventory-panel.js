@@ -71,6 +71,10 @@ const STRINGS = {
     fmt_markdown: "Markdown",
     fmt_rich: "Rich text (Docs, Notes, email)",
     include_links: "Include links",
+    choose_models: "Choose what to share",
+    pick_all: "Select all",
+    pick_none: "Select none",
+    nothing_selected: "Nothing selected. Pick at least one model above.",
     copy: "Copy",
     copied: "Copied!",
     copy_failed: "Select and copy manually",
@@ -181,13 +185,21 @@ button.primary { background:var(--primary-color); color:var(--text-primary-color
 .share-bar div { height:100%; background:var(--primary-color); }
 .chev { color:var(--secondary-text-color); width:12px; }
 .mlinks { display:flex; flex-wrap:wrap; justify-content:flex-end; }
-dialog { background:var(--card-background-color); color:var(--primary-text-color); border:1px solid var(--divider-color); border-radius:14px; padding:16px; width:min(720px,94vw); }
+dialog { background:var(--card-background-color); color:var(--primary-text-color); border:1px solid var(--divider-color); border-radius:14px; padding:16px; width:min(720px,94vw); max-height:94vh; overflow:auto; }
 dialog::backdrop { background:rgba(0,0,0,.55); }
 .dlghead, .dlgfoot, .dlgopts { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
 .dlghead { justify-content:space-between; margin-bottom:12px; font-size:17px; }
 .dlgopts { margin-bottom:10px; }
 .dlgfoot { margin-top:12px; justify-content:flex-end; }
 .dlgfoot .sub { flex:1; min-width:180px; }
+.pick { margin-bottom:10px; border:1px solid var(--divider-color); border-radius:8px; padding:6px 10px; }
+.pick summary { cursor:pointer; font-size:14px; padding:4px 0; }
+.pickbtns { display:flex; gap:8px; margin:6px 0; }
+.pickbtns button { padding:4px 10px; font-size:13px; }
+#pickList { max-height:min(30vh,260px); overflow:auto; padding-bottom:4px; }
+.phead { display:flex; align-items:center; gap:6px; font-weight:500; margin-top:8px; }
+.pmodel { display:flex; align-items:center; gap:6px; padding:2px 0 2px 24px; font-size:13px; }
+.phead .sub, .pmodel .sub { margin-left:auto; }
 #shareText { width:100%; height:min(50vh,420px); resize:vertical; font:13px/1.45 ui-monospace,Menlo,Consolas,monospace; background:var(--primary-background-color); color:var(--primary-text-color); border:1px solid var(--divider-color); border-radius:8px; padding:10px; }
 #shareRich { max-height:min(50vh,420px); overflow:auto; background:#fff; color:#111; border-radius:8px; padding:4px 16px; }
 #shareRich a { color:#0b57d0; }
@@ -207,6 +219,7 @@ class HaInventoryPanel extends HTMLElement {
     this._sort = { key: "name", dir: 1 };
     this._open = new Set();
     this._openModels = new Set();
+    this._shareExcluded = new Set();
     this._view = "devices";
     this._built = false;
   }
@@ -289,6 +302,11 @@ class HaInventoryPanel extends HTMLElement {
           </select>
           <label><input type="checkbox" id="shareLinks" checked> ${esc(t.include_links)}</label>
         </div>
+        <details id="sharePick" class="pick">
+          <summary id="pickSummary"></summary>
+          <div class="pickbtns"><button id="pickAll">${esc(t.pick_all)}</button><button id="pickNone">${esc(t.pick_none)}</button></div>
+          <div id="pickList"></div>
+        </details>
         <textarea id="shareText" readonly spellcheck="false"></textarea>
         <div id="shareRich" hidden></div>
         <div class="dlgfoot">
@@ -327,6 +345,9 @@ class HaInventoryPanel extends HTMLElement {
     root.getElementById("shareFmt").addEventListener("change", () => this._renderShare());
     root.getElementById("shareLinks").addEventListener("change", () => this._renderShare());
     root.getElementById("shareCopy").addEventListener("click", (e) => this._shareCopy(e.target));
+    root.getElementById("pickAll").addEventListener("click", () => this._pickAll(true));
+    root.getElementById("pickNone").addEventListener("click", () => this._pickAll(false));
+    root.getElementById("pickList").addEventListener("change", (e) => this._pickChanged(e.target));
     root.getElementById("shareDl").addEventListener("click", () =>
       this._download(this._shareContent("markdown", root.getElementById("shareLinks").checked).text, "text/markdown;charset=utf-8", `ha-inventory-report-${new Date().toISOString().slice(0, 10)}.md`));
     this._built = true;
@@ -643,6 +664,7 @@ class HaInventoryPanel extends HTMLElement {
 
   _openShare() {
     const root = this.shadowRoot;
+    this._buildPicker();
     this._renderShare();
     root.getElementById("share").showModal();
   }
@@ -655,8 +677,9 @@ class HaInventoryPanel extends HTMLElement {
 
   _shareContent(fmt, withLinks) {
     const t = this._t;
-    const groups = this._reportGroups();
-    const total = this._data.devices.length;
+    const groups = this._selectedGroups();
+    if (!groups.length) return { text: t.nothing_selected, html: `<p>${esc(t.nothing_selected)}</p>` };
+    const total = groups.reduce((n, g) => n + g.count, 0);
     const models = groups.reduce((n, g) => n + g.models.length, 0);
     const summary = `${total} ${t.devices} · ${models} ${t.models} · ${groups.length} ${t.types_word}`;
     const title = t.share_doc_title;
@@ -699,6 +722,70 @@ class HaInventoryPanel extends HTMLElement {
     }
     lines.push(credit);
     return { text: lines.join("\n") };
+  }
+
+  /** Groups restricted to the models ticked in the share dialog. */
+  _selectedGroups() {
+    return this._reportGroups()
+      .map((g) => {
+        const models = g.models.filter((m) => !this._shareExcluded.has(m.key));
+        return { ...g, models, count: models.reduce((n, m) => n + m.devices.length, 0) };
+      })
+      .filter((g) => g.models.length);
+  }
+
+  _buildPicker() {
+    const groups = this._reportGroups();
+    this.shadowRoot.getElementById("pickList").innerHTML = groups
+      .map((g) => `<div class="pgroup">
+        <label class="phead"><input type="checkbox" data-type="${esc(g.type)}"> ${g.icon} ${esc(g.label)} <span class="sub" data-tcount="${esc(g.type)}"></span></label>
+        ${g.models.map((m) => `<label class="pmodel"><input type="checkbox" data-model="${esc(m.key)}"> ${esc(m.name)} <span class="sub">×${m.devices.length}</span></label>`).join("")}
+      </div>`)
+      .join("");
+    this._syncPicker();
+  }
+
+  /** Reflect the exclusion set in every checkbox, counter and the summary line. */
+  _syncPicker() {
+    const root = this.shadowRoot;
+    const groups = this._reportGroups();
+    let chosen = 0;
+    let all = 0;
+    for (const g of groups) {
+      const on = g.models.filter((m) => !this._shareExcluded.has(m.key)).length;
+      chosen += on;
+      all += g.models.length;
+      const box = root.querySelector(`#pickList input[data-type="${CSS.escape(g.type)}"]`);
+      if (box) {
+        box.checked = on === g.models.length;
+        box.indeterminate = on > 0 && on < g.models.length;
+      }
+      const cnt = root.querySelector(`[data-tcount="${CSS.escape(g.type)}"]`);
+      if (cnt) cnt.textContent = `${on}/${g.models.length}`;
+    }
+    root.querySelectorAll("#pickList input[data-model]").forEach((el) => {
+      el.checked = !this._shareExcluded.has(el.dataset.model);
+    });
+    root.getElementById("pickSummary").textContent = `${this._t.choose_models} (${chosen}/${all})`;
+  }
+
+  _pickChanged(el) {
+    if (el.dataset.model) {
+      el.checked ? this._shareExcluded.delete(el.dataset.model) : this._shareExcluded.add(el.dataset.model);
+    } else if (el.dataset.type) {
+      const group = this._reportGroups().find((g) => g.type === el.dataset.type);
+      for (const m of group ? group.models : []) {
+        el.checked ? this._shareExcluded.delete(m.key) : this._shareExcluded.add(m.key);
+      }
+    }
+    this._syncPicker();
+    this._renderShare();
+  }
+
+  _pickAll(selected) {
+    this._shareExcluded = selected ? new Set() : new Set(this._reportGroups().flatMap((g) => g.models.map((m) => m.key)));
+    this._syncPicker();
+    this._renderShare();
   }
 
   _renderShare() {
